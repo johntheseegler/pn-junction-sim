@@ -113,21 +113,49 @@ def plot_dashboard(dev: Device, st: State, title: str = None, fname: str = None)
     fy = dev.curve.f(yy)
     fig, ax = plt.subplots(2, 2, figsize=(12, 7.5), constrained_layout=True)
     panels = [
-        (m.x, m.y, psi, r"$\psi$ [V]", "viridis"),
-        (xc, yc, Emag, r"$|\mathbf{E}|$ [V/cm]", "inferno"),
-        (m.x, m.y, np.log10(n), r"$\log_{10} n$ [cm$^{-3}$]", "Blues"),
-        (m.x, m.y, np.log10(p), r"$\log_{10} p$ [cm$^{-3}$]", "Reds"),
+        (ax[0, 0], m.x, m.y, psi, r"$\psi$ [V]", "viridis"),
+        (ax[1, 0], m.x, m.y, np.log10(n), r"$\log_{10} n$ [cm$^{-3}$]", "Blues"),
+        (ax[1, 1], m.x, m.y, np.log10(p), r"$\log_{10} p$ [cm$^{-3}$]", "Reds"),
     ]
-    for a, (x, y, Z, lab, cmap) in zip(ax.ravel(), panels):
+    for a, x, y, Z, lab, cmap in panels:
         pc = a.pcolormesh(x * um, y * um, Z, shading="auto", cmap=cmap)
         fig.colorbar(pc, ax=a, label=lab)
         a.plot(fy * um, yy * um, "w--", lw=1.2)
         a.set_xlabel(r"$x$ [$\mu$m]"); a.set_ylabel(r"$y$ [$\mu$m]")
         a.set_aspect("equal")
-    # field lines from visual (np.gradient) field on nodes
-    gy, gx = np.gradient(psi, m.y, m.x)
-    ax[0, 1].streamplot(m.x * um, m.y * um, -gx, -gy, color="c", density=0.8, linewidth=0.6)
-    ax[0, 1].set_xlim(0, dev.cfg.Lx * um); ax[0, 1].set_ylim(0, dev.cfg.Ly * um)
+
+    # Colored unit-vector quiver plot for E = (Ex, Ey)
+    ax_E = ax[0, 1]
+    nx_q = 34
+    ny_q = max(4, round(nx_q * dev.cfg.Ly / dev.cfg.Lx))
+    sx = max(1, round(len(xc) / nx_q))
+    sy = max(1, round(len(yc) / ny_q))
+    ix = slice(sx // 2, None, sx)
+    iy = slice(sy // 2, None, sy)
+    Xq, Yq = np.meshgrid(xc[ix] * um, yc[iy] * um)
+    Ex_q, Ey_q, Em_q = Ex[iy, ix], Ey[iy, ix], Emag[iy, ix]
+    Emax = max(float(Emag.max()), 1e-30)
+    valid = Em_q > 1e-3 * Emax
+    Ux = Ex_q[valid] / Em_q[valid]
+    Uy = Ey_q[valid] / Em_q[valid]
+    dx_q = (xc[1] - xc[0]) * sx * um
+    dy_q = (yc[1] - yc[0]) * sy * um
+    arrow_len = 0.75 * min(dx_q, dy_q)
+
+    ax_E.set_facecolor("#11131a")
+    ax_E.plot(fy * um, yy * um, "w--", lw=1.1, alpha=0.65, zorder=2)
+    q = ax_E.quiver(
+        Xq[valid], Yq[valid], Ux, Uy, Em_q[valid],
+        cmap="plasma", angles="xy", scale_units="xy", scale=1.0 / arrow_len,
+        pivot="mid", width=0.0042, headwidth=3.8, headlength=4.2, headaxislength=3.6,
+        zorder=3,
+    )
+    q.set_clim(0.0, Emax)
+    fig.colorbar(q, ax=ax_E, label=r"$|\mathbf{E}|$ [V/cm]")
+    ax_E.set_xlabel(r"$x$ [$\mu$m]"); ax_E.set_ylabel(r"$y$ [$\mu$m]")
+    ax_E.set_aspect("equal")
+    ax_E.set_xlim(0, dev.cfg.Lx * um); ax_E.set_ylim(0, dev.cfg.Ly * um)
+
     fig.suptitle(title or f"{dev.curve.name}, $V_{{app}}$ = {st.V:+.2f} V")
     if fname:
         fig.savefig(fname, dpi=130)
